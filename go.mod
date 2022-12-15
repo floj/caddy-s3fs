@@ -1,4 +1,4 @@
-module github.com/floj/caddy-s3-f3
+module github.com/floj/caddy-s3fs
 
 go 1.19
 

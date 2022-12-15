@@ -29,18 +29,18 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-// rangeReader produces an io.ReadCloser that reads
+// RangeReader produces an io.ReadCloser that reads
 // bytes in the range from [off, off+width)
 //
 // It is the caller's responsibility to call Close()
 // on the returned io.ReadCloser.
-func (r *s3File) rangeReader(from, amt int64) (io.ReadCloser, error) {
+func (r *s3File) RangeReader(from, amt int64) (io.ReadCloser, error) {
 	amt = amt + READAHEAD
 	target := from + amt - 1
-	if target >= r.info.Size() {
-		target = r.info.Size() - 1
+	if target >= r.Size() {
+		target = r.Size() - 1
 	}
-	if from >= r.info.Size() {
+	if from >= r.Size() {
 		return nil, io.EOF
 	}
 	rq := &s3.GetObjectInput{
@@ -48,7 +48,7 @@ func (r *s3File) rangeReader(from, amt int64) (io.ReadCloser, error) {
 		Key:    aws.String(r.name),
 		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", from, target)),
 	}
-	res, err := r.fs.s3.GetObjectWithContext(context.TODO(), rq)
+	res, err := r.fs.s3API.GetObjectWithContext(context.TODO(), rq)
 	if err != nil {
 		if res.Body != nil {
 			res.Body.Close()

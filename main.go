@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/floj/caddy-s3-fs/s3fs"
+	"github.com/floj/caddy-s3fs/s3fs"
 )
 
 func init() {
@@ -77,7 +77,7 @@ func (fs *FS) Provision(ctx caddy.Context) error {
 		return err
 	}
 
-	fs.StatFS = s3fs.NewFS(fs.Bucket, s3.New(sess))
+	fs.StatFS = s3fs.NewFS(fs.Bucket, s3.New(sess), ctx.Logger())
 
 	return nil
 }

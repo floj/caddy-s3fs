@@ -5,59 +5,55 @@ import (
 	"time"
 )
 
-// fileInfo implements os.fileInfo for a file in S3.
-type fileInfo struct {
-	mTime time.Time
-	name  string
-	size  int64
+// FileInfo implements os.FileInfo for a file in S3.
+type dirEntry struct {
+	name string
 }
 
 // newFileInfo creates file cachedInfo.
-func newFileInfo(name string, size int64, mTime time.Time) fileInfo {
-	return fileInfo{
-		name:  name,
-		size:  size,
-		mTime: mTime,
+func newDirEntry(name string) *dirEntry {
+	return &dirEntry{
+		name: name,
 	}
 }
 
 // Name provides the base name of the file.
-func (fi fileInfo) Name() string {
+func (fi dirEntry) Name() string {
 	return fi.name
 }
 
-func (fi fileInfo) Info() (fs.FileInfo, error) {
+func (fi dirEntry) Info() (fs.FileInfo, error) {
 	return fi, nil
 }
 
-func (fi fileInfo) Type() fs.FileMode {
+func (fi dirEntry) Type() fs.FileMode {
 	return fi.Mode()
 }
 
 // Size provides the length in bytes for a file.
-func (fi fileInfo) Size() int64 {
-	return fi.size
+func (fi dirEntry) Size() int64 {
+	return 0
 }
 
 // Mode provides the file mode bits. For a file in S3 this defaults to
 // 664 for files, 775 for directories.
 // In the future this may return differently depending on the permissions
 // available on the bucket.
-func (fi fileInfo) Mode() fs.FileMode {
-	return 0664
+func (fi dirEntry) Mode() fs.FileMode {
+	return 0755
 }
 
 // ModTime provides the last modification time.
-func (fi fileInfo) ModTime() time.Time {
-	return fi.mTime
+func (fi dirEntry) ModTime() time.Time {
+	return time.Unix(0, 0)
 }
 
 // IsDir provides the abbreviation for Mode().IsDir()
-func (fi fileInfo) IsDir() bool {
-	return false
+func (fi dirEntry) IsDir() bool {
+	return true
 }
 
 // Sys provides the underlying data source (can return nil)
-func (fi fileInfo) Sys() interface{} {
+func (fi dirEntry) Sys() interface{} {
 	return nil
 }

@@ -37,10 +37,10 @@ import (
 func (f *s3File) rangeReader(from, amt int64) (io.ReadCloser, error) {
 	amt = amt + READAHEAD
 	target := from + amt - 1
-	if target >= f.Size() {
-		target = f.Size() - 1
+	if target >= f.info.Size() {
+		target = f.info.Size() - 1
 	}
-	if from >= f.Size() {
+	if from >= f.info.Size() {
 		return nil, io.EOF
 	}
 	rq := &s3.GetObjectInput{

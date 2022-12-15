@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -52,50 +51,51 @@ func (s3fs *S3FS) Open(name string) (fs.File, error) {
 // Stat returns a FileInfo describing the named file.
 // If there is an error, it will be of type *os.PathError.
 func (s3fs S3FS) Stat(name string) (fs.FileInfo, error) {
-	out, err := s3fs.s3.HeadObjectWithContext(context.TODO(), &s3.HeadObjectInput{
+	resp, err := s3fs.s3.HeadObjectWithContext(context.TODO(), &s3.HeadObjectInput{
 		Bucket: aws.String(s3fs.bucket),
 		Key:    aws.String(name),
 	})
 	if err != nil {
-		var errRequestFailure awserr.RequestFailure
-		if errors.As(err, &errRequestFailure) {
-			if errRequestFailure.StatusCode() == 404 {
-				statDir, errStat := s3fs.statDirectory(name)
-				return statDir, errStat
-			}
+		var awsErr awserr.RequestFailure
+		if errors.As(err, &awsErr) && awsErr.StatusCode() == 404 {
+			statDir, errStat := s3fs.statDirectory(name)
+			return statDir, errStat
 		}
-		return FileInfo{}, &fs.PathError{
+		return nil, &fs.PathError{
 			Op:   "stat",
 			Path: name,
 			Err:  err,
 		}
-	} else if strings.HasSuffix(name, "/") {
-		// accept invisible directories as directories
-		return FileInfo{name: name}, nil
 	}
-	return newFileInfo(path.Base(name), false, *out.ContentLength, *out.LastModified), nil
+
+	if strings.HasSuffix(name, "/") {
+		// accept invisible directories as directories
+		return newDirEntry(name), nil
+	}
+
+	return newFileInfo(path.Base(name), *resp.ContentLength, *resp.LastModified), nil
 }
 
 func (s3fs S3FS) statDirectory(name string) (fs.FileInfo, error) {
-	nameClean := path.Clean(name)
-	out, err := s3fs.s3.ListObjectsV2WithContext(context.TODO(), &s3.ListObjectsV2Input{
+	name = path.Clean(name)
+	resp, err := s3fs.s3.ListObjectsV2WithContext(context.TODO(), &s3.ListObjectsV2Input{
 		Bucket:  aws.String(s3fs.bucket),
-		Prefix:  aws.String(strings.TrimPrefix(nameClean, "/")),
+		Prefix:  aws.String(strings.TrimPrefix(name, "/")),
 		MaxKeys: aws.Int64(1),
 	})
 	if err != nil {
-		return FileInfo{}, &fs.PathError{
+		return nil, &fs.PathError{
 			Op:   "stat",
 			Path: name,
 			Err:  err,
 		}
 	}
-	if *out.KeyCount == 0 && name != "" {
+	if *resp.KeyCount == 0 && name != "" {
 		return nil, &fs.PathError{
 			Op:   "stat",
 			Path: name,
 			Err:  fs.ErrNotExist,
 		}
 	}
-	return newFileInfo(path.Base(name), true, 0, time.Unix(0, 0)), nil
+	return newDirEntry(path.Base(name)), nil
 }

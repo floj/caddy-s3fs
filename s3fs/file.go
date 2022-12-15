@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -15,7 +14,7 @@ import (
 
 // s3File represents a file in S3.
 type s3File struct {
-	fs.FileInfo // File info cached for later used
+	info fs.FileInfo // File info cached for later used
 
 	fs   *S3FS  // Parent file system
 	name string // Name of the file
@@ -23,10 +22,9 @@ type s3File struct {
 	readdirContinuationToken *string // readdirContinuationToken is used to perform files listing across calls
 	readdirNotTruncated      bool    // readdirNotTruncated is set when we shall continue reading
 
-	off int64 // cur is the offset of the read-only stream
+	offset int64 // cur is the offset of the read-only stream
 
-	streamRead io.ReadCloser // streamRead is the underlying stream we are reading from
-
+	stream io.ReadCloser // streamRead is the underlying stream we are reading from
 	closed bool
 }
 
@@ -88,13 +86,13 @@ func (f *s3File) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 	var fis = make([]fs.DirEntry, 0, len(output.CommonPrefixes)+len(output.Contents))
 	for _, subfolder := range output.CommonPrefixes {
-		fis = append(fis, newFileInfo(path.Base("/"+*subfolder.Prefix), true, 0, time.Unix(0, 0)))
+		fis = append(fis, newDirEntry(path.Base("/"+*subfolder.Prefix)))
 	}
 	for _, fileObject := range output.Contents {
 		if strings.HasSuffix(*fileObject.Key, "/") {
 			continue
 		}
-		fis = append(fis, newFileInfo(path.Base("/"+*fileObject.Key), false, *fileObject.Size, *fileObject.LastModified))
+		fis = append(fis, newFileInfo(path.Base("/"+*fileObject.Key), *fileObject.Size, *fileObject.LastModified))
 	}
 
 	return fis, nil
@@ -109,9 +107,8 @@ func (f *s3File) readDirAll() ([]fs.DirEntry, error) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
-			} else {
-				return nil, err
 			}
+			return nil, err
 		}
 	}
 	return fileInfos, nil
@@ -120,11 +117,14 @@ func (f *s3File) readDirAll() ([]fs.DirEntry, error) {
 // Stat returns the FileInfo structure describing file.
 // If there is an error, it will be of type *PathError.
 func (f *s3File) Stat() (fs.FileInfo, error) {
-	info, err := f.fs.Stat(f.Name())
-	if err == nil {
-		f.FileInfo = info
+	if f.info == nil {
+		info, err := f.fs.Stat(f.Name())
+		if err != nil {
+			return nil, err
+		}
+		f.info = info
 	}
-	return info, err
+	return f.info, nil
 }
 
 // Close closes the File, rendering it unusable for I/O.
@@ -132,16 +132,13 @@ func (f *s3File) Stat() (fs.FileInfo, error) {
 func (f *s3File) Close() error {
 	f.closed = true
 	// Closing a reading stream
-	if f.streamRead != nil {
-		// We try to close the Reader
-		defer func() {
-			f.streamRead = nil
-		}()
-		f.streamRead.Close()
+	if f.stream == nil {
+		return nil
 	}
-
-	// Or maybe we don't have anything to close
-	return nil
+	// We try to close the Reader
+	err := f.stream.Close()
+	f.stream = nil
+	return err
 }
 
 // ReadAt reads len(p) bytes from the file starting at byte offset off.
@@ -162,25 +159,25 @@ func (f *s3File) ReadAt(p []byte, off int64) (n int, err error) {
 // EOF is signaled by a zero count with err set to io.EOF.
 func (f *s3File) Read(p []byte) (int, error) {
 	var err error
-	if f.streamRead == nil {
-		f.streamRead, err = f.rangeReader(f.off, int64(len(p)))
+	if f.stream == nil {
+		f.stream, err = f.rangeReader(f.offset, int64(len(p)))
 		if err != nil {
 			return 0, err
 		}
 	}
-	n, err := f.streamRead.Read(p)
+	n, err := f.stream.Read(p)
 	if err == io.EOF {
-		if f.streamRead != nil {
-			f.streamRead.Close()
-			f.streamRead = nil
+		if f.stream != nil {
+			f.stream.Close()
+			f.stream = nil
 		}
 		err = nil
 	}
-	f.off += int64(n)
-	if f.off >= f.Size() {
+	f.offset += int64(n)
+	if f.offset >= f.info.Size() {
 		return int(n), io.EOF
 	}
-	return int(n), err
+	return n, err
 }
 
 // Seek sets the offset for the next Read or Write on file to offset, interpreted
@@ -193,25 +190,25 @@ func (f *s3File) Seek(offset int64, whence int) (int64, error) {
 	if f.closed {
 		return 0, fs.ErrClosed
 	}
-	startByte := f.off
+	startByte := f.offset
 	switch whence {
 	case io.SeekStart:
 		startByte = offset
 	case io.SeekCurrent:
-		startByte = f.off + offset
+		startByte = f.offset + offset
 	case io.SeekEnd:
-		startByte = f.Size() - offset
+		startByte = f.info.Size() - offset
 	}
 	if startByte < 0 {
 		return startByte, fs.ErrInvalid
 	}
-	if f.off < startByte {
-		if f.streamRead != nil {
-			f.streamRead.Close()
-			f.streamRead = nil
+	if f.offset < startByte {
+		if f.stream != nil {
+			f.stream.Close()
+			f.stream = nil
 		}
 	}
-	f.off = startByte
-	f.streamRead = nil
+	f.offset = startByte
+	f.stream = nil
 	return startByte, nil
 }

@@ -13,8 +13,8 @@ type FileInfo struct {
 	sizeInBytes int64
 }
 
-// NewFileInfo creates file cachedInfo.
-func NewFileInfo(name string, directory bool, sizeInBytes int64, modTime time.Time) FileInfo {
+// newFileInfo creates file cachedInfo.
+func newFileInfo(name string, directory bool, sizeInBytes int64, modTime time.Time) FileInfo {
 	return FileInfo{
 		name:        name,
 		directory:   directory,

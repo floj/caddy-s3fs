@@ -1,6 +1,7 @@
 package s3fs
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"path"
@@ -15,7 +16,7 @@ import (
 
 // S3FS is an FS object backed by S3.
 type S3FS struct {
-	s3API  *s3.S3
+	s3     *s3.S3
 	bucket string // Bucket name
 	log    *zap.Logger
 }
@@ -24,7 +25,7 @@ type S3FS struct {
 func NewFS(bucket string, s3 *s3.S3, log *zap.Logger) *S3FS {
 	return &S3FS{
 		bucket: bucket,
-		s3API:  s3,
+		s3:     s3,
 		log:    log,
 	}
 }
@@ -51,7 +52,7 @@ func (s3fs *S3FS) Open(name string) (fs.File, error) {
 // Stat returns a FileInfo describing the named file.
 // If there is an error, it will be of type *os.PathError.
 func (s3fs S3FS) Stat(name string) (fs.FileInfo, error) {
-	out, err := s3fs.s3API.HeadObject(&s3.HeadObjectInput{
+	out, err := s3fs.s3.HeadObjectWithContext(context.TODO(), &s3.HeadObjectInput{
 		Bucket: aws.String(s3fs.bucket),
 		Key:    aws.String(name),
 	})
@@ -72,12 +73,12 @@ func (s3fs S3FS) Stat(name string) (fs.FileInfo, error) {
 		// accept invisible directories as directories
 		return FileInfo{name: name}, nil
 	}
-	return NewFileInfo(path.Base(name), false, *out.ContentLength, *out.LastModified), nil
+	return newFileInfo(path.Base(name), false, *out.ContentLength, *out.LastModified), nil
 }
 
 func (s3fs S3FS) statDirectory(name string) (fs.FileInfo, error) {
 	nameClean := path.Clean(name)
-	out, err := s3fs.s3API.ListObjectsV2(&s3.ListObjectsV2Input{
+	out, err := s3fs.s3.ListObjectsV2WithContext(context.TODO(), &s3.ListObjectsV2Input{
 		Bucket:  aws.String(s3fs.bucket),
 		Prefix:  aws.String(strings.TrimPrefix(nameClean, "/")),
 		MaxKeys: aws.Int64(1),
@@ -96,5 +97,5 @@ func (s3fs S3FS) statDirectory(name string) (fs.FileInfo, error) {
 			Err:  fs.ErrNotExist,
 		}
 	}
-	return NewFileInfo(path.Base(name), true, 0, time.Unix(0, 0)), nil
+	return newFileInfo(path.Base(name), true, 0, time.Unix(0, 0)), nil
 }

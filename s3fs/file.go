@@ -1,6 +1,7 @@
 package s3fs
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -71,14 +72,13 @@ func (f *s3File) ReadDir(n int) ([]fs.DirEntry, error) {
 	if name != "" && !strings.HasSuffix(name, "/") {
 		name += "/"
 	}
-	rq := &s3.ListObjectsV2Input{
+	output, err := f.fs.s3.ListObjectsV2WithContext(context.TODO(), &s3.ListObjectsV2Input{
 		ContinuationToken: f.readdirContinuationToken,
 		Bucket:            aws.String(f.fs.bucket),
 		Prefix:            aws.String(name),
 		Delimiter:         aws.String("/"),
 		MaxKeys:           aws.Int64(int64(n)),
-	}
-	output, err := f.fs.s3API.ListObjectsV2(rq)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +88,13 @@ func (f *s3File) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 	var fis = make([]fs.DirEntry, 0, len(output.CommonPrefixes)+len(output.Contents))
 	for _, subfolder := range output.CommonPrefixes {
-		fis = append(fis, NewFileInfo(path.Base("/"+*subfolder.Prefix), true, 0, time.Unix(0, 0)))
+		fis = append(fis, newFileInfo(path.Base("/"+*subfolder.Prefix), true, 0, time.Unix(0, 0)))
 	}
 	for _, fileObject := range output.Contents {
 		if strings.HasSuffix(*fileObject.Key, "/") {
 			continue
 		}
-		fis = append(fis, NewFileInfo(path.Base("/"+*fileObject.Key), false, *fileObject.Size, *fileObject.LastModified))
+		fis = append(fis, newFileInfo(path.Base("/"+*fileObject.Key), false, *fileObject.Size, *fileObject.LastModified))
 	}
 
 	return fis, nil
@@ -163,7 +163,7 @@ func (f *s3File) ReadAt(p []byte, off int64) (n int, err error) {
 func (f *s3File) Read(p []byte) (int, error) {
 	var err error
 	if f.streamRead == nil {
-		f.streamRead, err = f.RangeReader(f.off, int64(len(p)))
+		f.streamRead, err = f.rangeReader(f.off, int64(len(p)))
 		if err != nil {
 			return 0, err
 		}
